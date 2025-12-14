@@ -10,3 +10,9 @@ You can create notes from SGF and save them as editable files using the existing
 - Dataview
   - Displays a list of game records in a table.
   - Used to manipulate data, apply search criteria, and sort.
+
+### How to Use
+1. Clone this repository
+2. npm install
+3. npm run dev
+4. Enable Go Manager, which is displayed in the Obsidian community plugin.
