@@ -1,0 +1,10 @@
+{
+	"id": "go-manager",
+	"name": "Go Manager",
+	"version": "1.0.0",
+	"minAppVersion": "0.15.0",
+	"description": "This is a plugin to manage the game records after a Go game",
+	"author": "favopg",
+	"authorUrl": "https://favoriteigo.com/",
+	"isDesktopOnly": false
+}
