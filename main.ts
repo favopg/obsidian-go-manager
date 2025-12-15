@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, MarkdownView } from 'obsidian';
 
 interface GoManagerSettings {
     sgfFolderPath: string;
@@ -14,12 +14,16 @@ export default class GoManagerPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
 
-        // Command: keep previous behavior
+        // Command: overwrite active Markdown file with "ハローワールド"
         this.addCommand({
             id: 'create_show_data',
             name: 'Create Show Data',
-            callback: () => {
-                console.log('ハローワールド');
+            callback: async () => {
+                const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
+                const file = mdView?.file;
+                if (file) {
+                    await this.app.vault.modify(file, 'ハローワールド');
+                }
             },
         });
 
