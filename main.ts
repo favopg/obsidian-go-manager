@@ -1,4 +1,4 @@
-import { App, Plugin, PluginSettingTab, Setting, MarkdownView } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, MarkdownView, Modal, TFolder } from 'obsidian';
 
 interface GoManagerSettings {
     sgfFolderPath: string;
@@ -14,11 +14,25 @@ export default class GoManagerPlugin extends Plugin {
     async onload() {
         await this.loadSettings();
 
-        // Command: overwrite active Markdown file with "ハローワールド"
+        // 作業用コマンド: アクティブなMarkdownファイルを「ハローワールド」で上書きする
         this.addCommand({
             id: 'create_show_data',
             name: 'Create Show Data',
             callback: async () => {
+                // 1) 設定のフォルダ名が存在するかチェック（未設定・不存在ならモーダルで通知して終了）
+                const folderPath = (this.settings.sgfFolderPath || '').trim();
+                if (!folderPath) {
+                    new ErrorModal(this.app, 'エラー: 設定の「SGFフォルダ」が未設定です。設定からフォルダを指定してください。').open();
+                    return;
+                }
+
+                const abstract = this.app.vault.getAbstractFileByPath(folderPath);
+                if (!(abstract instanceof TFolder)) {
+                    new ErrorModal(this.app, `エラー: 指定されたフォルダが見つかりませんでした: "${folderPath}"\n正しいフォルダ名を設定で指定してください。`).open();
+                    return;
+                }
+
+                // 2) フォルダが存在する場合のみ、アクティブなMarkdownを上書き
                 const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
                 const file = mdView?.file;
                 if (file) {
@@ -27,7 +41,7 @@ export default class GoManagerPlugin extends Plugin {
             },
         });
 
-        // Settings tab (gear icon)
+        // 設定タブ（歯車アイコン）
         this.addSettingTab(new GoManagerSettingTab(this.app, this));
     }
 
@@ -37,6 +51,31 @@ export default class GoManagerPlugin extends Plugin {
 
     async saveSettings() {
         await this.saveData(this.settings);
+    }
+}
+
+// シンプルなエラーモーダル（日本語メッセージ表示）
+class ErrorModal extends Modal {
+    private message: string;
+
+    constructor(app: App, message: string) {
+        super(app);
+        this.message = message;
+    }
+
+    onOpen(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+        contentEl.createEl('h3', { text: 'Go Manager エラー' });
+        contentEl.createEl('p', { text: this.message });
+        const footer = contentEl.createEl('div', { attr: { style: 'margin-top: 1rem; text-align: right;' } });
+        const button = footer.createEl('button', { text: '閉じる' });
+        button.addEventListener('click', () => this.close());
+    }
+
+    onClose(): void {
+        const { contentEl } = this;
+        contentEl.empty();
     }
 }
 
