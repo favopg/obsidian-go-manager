@@ -2,10 +2,13 @@ import { App, Plugin, PluginSettingTab, Setting, MarkdownView, Modal, TFolder } 
 
 interface GoManagerSettings {
     sgfFolderPath: string;
+    // 碁盤サイズ（9/13/19）
+    boardSize: 9 | 13 | 19;
 }
 
 const DEFAULT_SETTINGS: GoManagerSettings = {
     sgfFolderPath: '',
+    boardSize: 19,
 };
 
 export default class GoManagerPlugin extends Plugin {
@@ -233,6 +236,22 @@ class GoManagerSettingTab extends PluginSettingTab {
                     input.click();
                     // Clean up element after use
                     setTimeout(() => input.remove(), 0);
+                });
+            });
+
+        // 碁盤サイズ設定（ドロップダウン 9/13/19, デフォルト19）
+        new Setting(containerEl)
+            .setName('碁盤の大きさ')
+            .setDesc('碁盤サイズを選択します（9路 / 13路 / 19路）。')
+            .addDropdown((dd) => {
+                dd.addOption('9', '9路');
+                dd.addOption('13', '13路');
+                dd.addOption('19', '19路');
+                dd.setValue(String(this.plugin.settings.boardSize ?? 19));
+                dd.onChange(async (value) => {
+                    const v = Number(value) as 9 | 13 | 19;
+                    this.plugin.settings.boardSize = v;
+                    await this.plugin.saveSettings();
                 });
             });
     }
