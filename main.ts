@@ -22,6 +22,26 @@ export default class GoManagerPlugin extends Plugin {
             id: 'create_show_data',
             name: 'Create Show Data',
             callback: async () => {
+                // 0) 依存プラグインの有効化チェック
+                try {
+                    // 型定義上 App.plugins が存在しない環境向けに any キャストで回避
+                    const enabled = (this.app as any)?.plugins?.enabledPlugins as Set<string> | undefined;
+                    const isGVEnabled = !!enabled && enabled.has('goboard-viewer');
+                    const isDVEnabled = !!enabled && enabled.has('dataview');
+
+                    // Go Board Viewer が無効でも一覧作成は続行する（通知のみ）
+                    if (!isGVEnabled) {
+                        new ErrorModal(this.app, '棋譜を参照できないので、Go Board Viewerコミュニティプラグインを有効化してください').open();
+                    }
+
+                    // Dataview が無効なら一覧作成はできないため、通知して終了
+                    if (!isDVEnabled) {
+                        new ErrorModal(this.app, 'SGFから一覧を作成することができないので、Dataviewコミュニティプラグインを有効化してください').open();
+                        return;
+                    }
+                } catch (_) {
+                    // 何らかの理由でプラグイン情報が取得できない場合は続行（既存動作を壊さない）
+                }
                 // 1) 設定のフォルダ名が存在するかチェック（未設定・不存在ならモーダルで通知して終了）
                 const folderPath = (this.settings.sgfFolderPath || '').trim();
                 if (!folderPath) {
