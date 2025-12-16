@@ -1,14 +1,19 @@
 import { App, Plugin, PluginSettingTab, Setting, MarkdownView, Modal, TFolder } from 'obsidian';
+import * as os from 'os';
+import * as path from 'path';
 
 interface GoManagerSettings {
     sgfFolderPath: string;
     // 碁盤サイズ（9/13/19）
     boardSize: 9 | 13 | 19;
+    // ローカルファイルシステム上の、インポート元SGFディレクトリ（例: C:\Users\<User>\Downloads）
+    importSgfDirPath?: string;
 }
 
 const DEFAULT_SETTINGS: GoManagerSettings = {
     sgfFolderPath: '',
     boardSize: 19,
+    importSgfDirPath: '',
 };
 
 export default class GoManagerPlugin extends Plugin {
@@ -16,6 +21,19 @@ export default class GoManagerPlugin extends Plugin {
 
     async onload() {
         await this.loadSettings();
+
+        // インポート元SGFディレクトリのデフォルトをローカルのダウンロードフォルダに初期化
+        if (!this.settings.importSgfDirPath || this.settings.importSgfDirPath.trim() === '') {
+            try {
+                const downloads = getDefaultDownloadsDir();
+                if (downloads) {
+                    this.settings.importSgfDirPath = downloads;
+                    await this.saveSettings();
+                }
+            } catch (_) {
+                // 失敗しても致命的ではないので無視
+            }
+        }
 
         // 作業用コマンド: アクティブなMarkdownファイルを「ハローワールド」で上書きする
         this.addCommand({
@@ -212,6 +230,69 @@ class GoManagerSettingTab extends PluginSettingTab {
 
         containerEl.createEl('h3', { text: 'Go Manager 設定' });
 
+        // インポート元SGFディレクトリ（ローカルのOSパスを直接指定 or フォルダ選択）
+        new Setting(containerEl)
+            .setName('インポート元SGFディレクトリ')
+            .setDesc('ローカルPC上のSGFファイルが置いてあるフォルダへのフルパスを指定します（デフォルト: ダウンロードフォルダ）。')
+            .addText((text) => {
+                text.setPlaceholder(getDefaultDownloadsDir())
+                    .setValue((this.plugin.settings.importSgfDirPath || ''))
+                    .onChange(async (value) => {
+                        this.plugin.settings.importSgfDirPath = value.trim();
+                        await this.plugin.saveSettings();
+                    });
+            })
+            .addButton((btn) => {
+                btn.setButtonText('フォルダを選択').onClick(async () => {
+                    // ディレクトリを選択するための隠しファイル入力（webkitdirectory対応）
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    // @ts-ignore - Electron/Chromium supports webkitdirectory
+                    input.webkitdirectory = true;
+                    // @ts-ignore
+                    input.directory = true;
+                    input.style.display = 'none';
+
+                    input.addEventListener('change', async () => {
+                        const files = Array.from(input.files || []);
+                        if (files.length === 0) return;
+
+                        const first = files[0] as File & { webkitRelativePath?: string } & { path?: string };
+                        const rel = (first.webkitRelativePath || '');
+                        const abs = (first as any).path as string | undefined;
+
+                        let chosen = '';
+                        if (abs && rel) {
+                            // rel = Root/Sub/.../file.ext
+                            // depth = ディレクトリ階層の数（ファイル名を除く）
+                            const parts = rel.split('/');
+                            const depth = Math.max(0, parts.length - 1);
+                            let dir = path.dirname(abs);
+                            for (let i = 0; i < depth; i++) {
+                                dir = path.dirname(dir);
+                            }
+                            chosen = dir;
+                        } else if (abs) {
+                            // webkitRelativePathが無い場合は親ディレクトリを使用
+                            chosen = path.dirname(abs);
+                        } else if (rel) {
+                            // 最低限、フォルダ名（最上位）を設定（Vault内の相対扱いになる）
+                            chosen = rel.split('/')[0] || '';
+                        }
+
+                        if (chosen) {
+                            this.plugin.settings.importSgfDirPath = chosen;
+                            await this.plugin.saveSettings();
+                            this.display();
+                        }
+                    });
+
+                    document.body.appendChild(input);
+                    input.click();
+                    setTimeout(() => input.remove(), 0);
+                });
+            });
+
         // SGFフォルダ設定
         new Setting(containerEl)
             .setName('SGFフォルダ')
@@ -275,4 +356,12 @@ class GoManagerSettingTab extends PluginSettingTab {
                 });
             });
     }
+}
+
+// OSに応じたデフォルトのダウンロードフォルダを返す
+function getDefaultDownloadsDir(): string {
+    const home = os.homedir?.() || '';
+    if (!home) return 'Downloads';
+    // Windows / macOS / Linux いずれも一般的にホーム直下のDownloadsを想定
+    return path.join(home, 'Downloads');
 }
