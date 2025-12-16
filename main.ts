@@ -1,6 +1,8 @@
-import { App, Plugin, PluginSettingTab, Setting, MarkdownView, Modal, TFolder } from 'obsidian';
+import { App, Plugin, PluginSettingTab, Setting, MarkdownView, Modal, TFolder, Notice } from 'obsidian';
 import * as os from 'os';
 import * as path from 'path';
+import * as fs from 'fs';
+import { promises as fsp } from 'fs';
 
 interface GoManagerSettings {
     sgfFolderPath: string;
@@ -178,6 +180,96 @@ export default class GoManagerPlugin extends Plugin {
             },
         });
 
+        // Import SGF Local: ローカルのインポート元SGFディレクトリからVault内のSGFディレクトリへ.sgfを移動
+        this.addCommand({
+            id: 'import_sgf_local',
+            name: 'Import SGF Local',
+            callback: async () => {
+                try {
+                    const srcDir = (this.settings.importSgfDirPath || '').trim();
+                    const vaultDstRoot = (this.settings.sgfFolderPath || '').trim();
+
+                    if (!vaultDstRoot) {
+                        new ErrorModal(this.app, 'エラー: 設定の「SGFフォルダ」が未設定です。設定からフォルダを指定してください。').open();
+                        return;
+                    }
+
+                    // Vault内のフォルダを確認（無ければ作成）
+                    const ensureVaultFolder = async (folderPath: string) => {
+                        const existing = this.app.vault.getAbstractFileByPath(folderPath);
+                        if (existing instanceof TFolder) return;
+                        await this.app.vault.createFolder(folderPath);
+                    };
+
+                    // OS上のディレクトリ存在チェック
+                    if (!srcDir) {
+                        new ErrorModal(this.app, 'エラー: 設定の「インポート元SGFディレクトリ」が未設定です。設定からディレクトリを指定してください。').open();
+                        return;
+                    }
+                    let stat: fs.Stats | undefined;
+                    try {
+                        stat = await fsp.stat(srcDir);
+                    } catch (_) {
+                        stat = undefined;
+                    }
+                    if (!stat || !stat.isDirectory()) {
+                        new ErrorModal(this.app, `エラー: インポート元SGFディレクトリが見つかりません: "${srcDir}"`).open();
+                        return;
+                    }
+
+                    await ensureVaultFolder(vaultDstRoot);
+
+                    // ユニークなVault内ファイルパスを作る
+                    const getUniqueVaultPath = async (baseFolder: string, baseName: string): Promise<string> => {
+                        const norm = baseFolder.endsWith('/') ? baseFolder.slice(0, -1) : baseFolder;
+                        const ext = path.extname(baseName);
+                        const nameOnly = path.basename(baseName, ext);
+                        let candidate = `${norm}/${baseName}`;
+                        let i = 1;
+                        while (this.app.vault.getAbstractFileByPath(candidate)) {
+                            candidate = `${norm}/${nameOnly} (${i})${ext}`;
+                            i++;
+                        }
+                        return candidate;
+                    };
+
+                    // srcDir内の*.sgfを列挙
+                    const entries = await fsp.readdir(srcDir, { withFileTypes: true });
+                    const sgfFiles = entries
+                        .filter((e) => e.isFile() && path.extname(e.name).toLowerCase() === '.sgf')
+                        .map((e) => e.name);
+
+                    for (const fname of sgfFiles) {
+                        const abs = path.join(srcDir, fname);
+                        // 文字コードは中身としてVaultに保存するだけなのでバイナリ→utf8文字列で良い
+                        // SGFはテキスト形式
+                        let data: string;
+                        try {
+                            data = await fsp.readFile(abs, 'utf8');
+                        } catch {
+                            // 読み込み失敗時はスキップ
+                            continue;
+                        }
+
+                        // 保存先のVaultパス（フォルダはVault相対、区切りは/）
+                        const uniquePath = await getUniqueVaultPath(vaultDstRoot, fname);
+                        try {
+                            await this.app.vault.create(uniquePath, data);
+                            // 作成に成功したら元ファイルを削除して「移動」完了
+                            try { await fsp.unlink(abs); } catch { /* ignore unlink errors */ }
+                        } catch {
+                            // 既存や一時的エラーはスキップ
+                        }
+                    }
+
+                    const message = `${srcDir}のSGFファイルをSGFディレクトリにインポートしました。`;
+                    new Notice(message, 8000);
+                } catch (e: any) {
+                    new ErrorModal(this.app, `インポート処理中にエラーが発生しました。\n${e?.message || e}`).open();
+                }
+            },
+        });
+
         // 設定タブ（歯車アイコン）
         this.addSettingTab(new GoManagerSettingTab(this.app, this));
     }
@@ -244,7 +336,29 @@ class GoManagerSettingTab extends PluginSettingTab {
             })
             .addButton((btn) => {
                 btn.setButtonText('フォルダを選択').onClick(async () => {
-                    // ディレクトリを選択するための隠しファイル入力（webkitdirectory対応）
+                    // まずは Electron の directory picker を優先して使用（"アップロード"ダイアログを回避）
+                    try {
+                        const req = (window as any).require?.('electron');
+                        const dialog = req?.remote?.dialog || req?.dialog;
+                        if (dialog?.showOpenDialog) {
+                            const result = await dialog.showOpenDialog({
+                                properties: ['openDirectory', 'dontAddToRecent'],
+                                title: 'フォルダーの選択',
+                            });
+                            if (result.canceled || !result.filePaths?.length) return;
+                            const chosenAbs = result.filePaths[0];
+                            if (chosenAbs) {
+                                this.plugin.settings.importSgfDirPath = chosenAbs;
+                                await this.plugin.saveSettings();
+                                this.display();
+                                return;
+                            }
+                        }
+                    } catch (_) {
+                        // フォールバックに進む
+                    }
+
+                    // フォールバック: ディレクトリを選択するための隠しファイル入力（webkitdirectory対応）
                     const input = document.createElement('input');
                     input.type = 'file';
                     // @ts-ignore - Electron/Chromium supports webkitdirectory
@@ -276,7 +390,7 @@ class GoManagerSettingTab extends PluginSettingTab {
                             // webkitRelativePathが無い場合は親ディレクトリを使用
                             chosen = path.dirname(abs);
                         } else if (rel) {
-                            // 最低限、フォルダ名（最上位）を設定（Vault内の相対扱いになる）
+                            // 最低限、フォルダ名（最上位）を設定
                             chosen = rel.split('/')[0] || '';
                         }
 
