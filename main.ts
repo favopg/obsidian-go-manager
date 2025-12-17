@@ -81,12 +81,14 @@ export default class GoManagerPlugin extends Plugin {
                 if (file) {
                     // DataviewJSコードブロックを生成（サブフォルダを含めて*.sgfを走査し、ヘッダ/ボディ仕様で出力）
                     const folderPathForCode = folderPath; // そのままコードブロックへ埋め込み
+                    const selectedBoardSize = this.settings.boardSize; // 設定の碁盤サイズ（9/13/19）
 
                     // バッククオートやテンプレート文字列のエスケープに注意して構築
                     const content = [
                         '```dataviewjs',
                         '// SGFフォルダ直下およびサブフォルダのSGFを一覧表示する',
                         `const ROOT = ${JSON.stringify(folderPathForCode)};`,
+                        `const FILTER_SZ = ${JSON.stringify(selectedBoardSize)}; // 設定で選択された碁盤サイズ`,
                         '',
                         '// Obsidian APIを使ってフォルダ配下を再帰走査',
                         'const {vault} = app;',
@@ -156,12 +158,19 @@ export default class GoManagerPlugin extends Plugin {
                         '(async () => {',
                         '  const files = walkSgfFiles(ROOT);',
                         '  const rows = [];',
-                        '  let total = 0; // 総対局数',
-                        '  let blackWins = 0; // 黒の勝ち数',
-                        '  let whiteWins = 0; // 白の勝ち数',
+                        '  let total = 0; // 総対局数（指定サイズのみ）',
+                        '  let blackWins = 0; // 黒の勝ち数（指定サイズのみ）',
+                        '  let whiteWins = 0; // 白の勝ち数（指定サイズのみ）',
                         '  for (const f of files){',
                         '    let src = "";',
                         '    try { src = await vault.read(f); } catch(e) { src = ""; }',
+                        '',
+                        '    // 盤サイズ(SZ)でフィルタリング',
+                        '    const szRaw = tag(src, "SZ");',
+                        '    const sz = parseInt(szRaw, 10);',
+                        '    if (!Number.isFinite(sz) || sz !== FILTER_SZ) {',
+                        '      continue;',
+                        '    }',
                         '',
                         '    const pb = tag(src, "PB");',
                         '    const pw = tag(src, "PW");',
@@ -179,6 +188,7 @@ export default class GoManagerPlugin extends Plugin {
                         '  }',
                         '  // 上部にサマリー表示',
                         '  const pct = (n, d) => d ? (Math.round((n * 1000) / d) / 10).toFixed(1) : "0.0";',
+                        '  dv.paragraph(`表示対象: ${FILTER_SZ}路`);',
                         '  dv.paragraph(`対局数: ${total}局　黒: ${blackWins}勝　白: ${whiteWins}勝`);',
                         '  dv.paragraph(`黒勝率: ${pct(blackWins, total)}%　白勝率: ${pct(whiteWins, total)}%`);',
                         '  // ヘッダ: 黒番, 白番, 対局内容, 手合い割, 結果, 棋譜(SGFファイル名)',
