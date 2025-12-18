@@ -1,5 +1,12 @@
 {
   "sgfFolderPath": "SGF",
   "boardSize": 19,
-  "importSgfDirPath": "C:\\Users\\favor\\Downloads"
+  "importSgfDirPath": "C:\\Users\\favor\\Downloads",
+  "fusekiPairs": [
+    {
+      "x": 4,
+      "y": 4,
+      "name": "星"
+    }
+  ]
 }

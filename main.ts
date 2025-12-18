@@ -10,12 +10,15 @@ interface GoManagerSettings {
     boardSize: 9 | 13 | 19;
     // ローカルファイルシステム上の、インポート元SGFディレクトリ（例: C:\Users\<User>\Downloads）
     importSgfDirPath?: string;
+    // 座標と布石名のセット一覧（例: x:4, y:4, name:"星"）
+    fusekiPairs?: { x: number; y: number; name: string }[];
 }
 
 const DEFAULT_SETTINGS: GoManagerSettings = {
     sgfFolderPath: '',
     boardSize: 19,
     importSgfDirPath: '',
+    fusekiPairs: [],
 };
 
 export default class GoManagerPlugin extends Plugin {
@@ -535,6 +538,73 @@ class GoManagerSettingTab extends PluginSettingTab {
                     const v = Number(value) as 9 | 13 | 19;
                     this.plugin.settings.boardSize = v;
                     await this.plugin.saveSettings();
+                });
+            });
+
+        // 座標と布石のセット
+        containerEl.createEl('h4', { text: '座標と布石のセット' });
+        containerEl.createEl('p', { text: '例）座標: 4,4　布石: 星（数値は1始まり）' });
+
+        // 設定の後方互換（undefinedのとき空配列に）
+        if (!Array.isArray(this.plugin.settings.fusekiPairs)) {
+            this.plugin.settings.fusekiPairs = [];
+        }
+
+        const pairListEl = containerEl.createEl('div');
+
+        const renderPairs = () => {
+            pairListEl.empty();
+            (this.plugin.settings.fusekiPairs || []).forEach((p, idx) => {
+                const s = new Setting(pairListEl).setName(`セット ${idx + 1}`);
+                s.addText((tx) => {
+                    tx.setPlaceholder('x')
+                        .setValue(p?.x !== undefined ? String(p.x) : '')
+                        .onChange(async (v) => {
+                            const n = Number(v);
+                            this.plugin.settings.fusekiPairs![idx].x = Number.isFinite(n) ? n : 0;
+                            await this.plugin.saveSettings();
+                        });
+                });
+                s.addText((ty) => {
+                    ty.setPlaceholder('y')
+                        .setValue(p?.y !== undefined ? String(p.y) : '')
+                        .onChange(async (v) => {
+                            const n = Number(v);
+                            this.plugin.settings.fusekiPairs![idx].y = Number.isFinite(n) ? n : 0;
+                            await this.plugin.saveSettings();
+                        });
+                });
+                s.addText((tn) => {
+                    tn.setPlaceholder('布石名（例: 星）')
+                        .setValue(p?.name ?? '')
+                        .onChange(async (v) => {
+                            this.plugin.settings.fusekiPairs![idx].name = v.trim();
+                            await this.plugin.saveSettings();
+                        });
+                });
+                s.addExtraButton((b) => {
+                    b.setIcon('cross');
+                    b.setTooltip('削除');
+                    b.onClick(async () => {
+                        this.plugin.settings.fusekiPairs!.splice(idx, 1);
+                        await this.plugin.saveSettings();
+                        renderPairs();
+                    });
+                });
+            });
+        };
+
+        renderPairs();
+
+        new Setting(containerEl)
+            .setName('セットの追加')
+            .setDesc('新しい「座標, 布石」ペアを追加します。')
+            .addButton((btn) => {
+                btn.setButtonText('追加').onClick(async () => {
+                    this.plugin.settings.fusekiPairs = this.plugin.settings.fusekiPairs || [];
+                    this.plugin.settings.fusekiPairs.push({ x: 4, y: 4, name: '星' });
+                    await this.plugin.saveSettings();
+                    renderPairs();
                 });
             });
     }
