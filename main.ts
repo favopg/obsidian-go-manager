@@ -374,6 +374,10 @@ export default class GoManagerPlugin extends Plugin {
                         '  nextBtn.addEventListener("click", () => { currentPage++; render(input.value); });',
                         '})();',
                         '```',
+                        '',
+                        '#対局ノート ' + (this.settings.fusekiPairs && this.settings.fusekiPairs.length > 0 
+                            ? Array.from(new Set(this.settings.fusekiPairs.map(p => p.name))).map(name => `#${name}`).join(' ')
+                            : '') + ` #${this.settings.boardSize}路`,
                     ].join('\n');
 
                     await this.app.vault.modify(file, content);
