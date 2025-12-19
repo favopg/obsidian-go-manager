@@ -19,9 +19,12 @@ jobs:
         with:
           node-version: 18
           cache: npm
+          cache-dependency-path: .obsidian/plugins/go-manager/package-lock.json
 
       - name: Install dependencies
+        working-directory: .obsidian/plugins/go-manager
         run: npm install
 
       - name: Build
+        working-directory: .obsidian/plugins/go-manager
         run: npm run build
