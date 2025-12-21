@@ -475,6 +475,57 @@ export default class GoManagerPlugin extends Plugin {
             },
         });
 
+        // Create Edit Mode Note: 絶対パスでSGFファイルを選択し、その内容で編集モードのノートを作成
+        this.addCommand({
+            id: 'create_edit_mode_note',
+            name: 'Create Edit Mode Note',
+            callback: async () => {
+                try {
+                    // Electronのダイアログを使用してファイルを選択
+                    // Obsidian環境では window.require('electron') でアクセス可能
+                    const electron = (window as any).require('electron');
+                    const { dialog } = electron.remote ? electron.remote : electron;
+                    
+                    const result = await dialog.showOpenDialog({
+                        properties: ['openFile'],
+                        filters: [
+                            { name: 'SGF Files', extensions: ['sgf'] },
+                            { name: 'All Files', extensions: ['*'] }
+                        ]
+                    });
+
+                    if (result.canceled || result.filePaths.length === 0) {
+                        return;
+                    }
+
+                    const fullPath = result.filePaths[0];
+                    const sgfContent = await fsp.readFile(fullPath, 'utf8');
+                    const fileName = path.basename(fullPath, path.extname(fullPath));
+
+                    // 新しいノートを作成
+                    const vaultPath = `${fileName}.md`;
+                    let finalVaultPath = vaultPath;
+                    let i = 1;
+                    while (this.app.vault.getAbstractFileByPath(finalVaultPath)) {
+                        finalVaultPath = `${fileName} (${i}).md`;
+                        i++;
+                    }
+
+                    const noteContent = `\`\`\`sgf-edit\n${sgfContent}\n\`\`\``;
+                    const newFile = await this.app.vault.create(finalVaultPath, noteContent);
+
+                    // 作成したノートを開く
+                    const leaf = this.app.workspace.getLeaf(false);
+                    await leaf.openFile(newFile);
+
+                    new Notice(`編集モードのノートを作成しました: ${finalVaultPath}`);
+                } catch (e: any) {
+                    console.error(e);
+                    new ErrorModal(this.app, `ノート作成中にエラーが発生しました。\n${e?.message || e}`).open();
+                }
+            }
+        });
+
         // 設定タブ（歯車アイコン）
         this.addSettingTab(new GoManagerSettingTab(this.app, this));
     }
