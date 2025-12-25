@@ -717,7 +717,7 @@ export default class GoManagerPlugin extends Plugin {
                     const result = await dialog.showOpenDialog({
                         properties: ['openFile'],
                         filters: [
-                            { name: 'SGF Files', extensions: ['sgf'] },
+                            { name: 'SGF/Markdown Files', extensions: ['sgf', 'md'] },
                             { name: 'All Files', extensions: ['*'] }
                         ]
                     });
@@ -727,7 +727,23 @@ export default class GoManagerPlugin extends Plugin {
                     }
 
                     const fullPath = result.filePaths[0];
-                    const sgfContent = await fsp.readFile(fullPath, 'utf8');
+                    let sgfContent = await fsp.readFile(fullPath, 'utf8');
+                    const ext = path.extname(fullPath).toLowerCase();
+
+                    // .md ファイルの場合は ```sgf ブロックを探す
+                    if (ext === '.md') {
+                        const sgfMatch = sgfContent.match(/```sgf\n([\s\S]*?)\n```/);
+                        if (sgfMatch) {
+                            sgfContent = sgfMatch[1];
+                        } else {
+                            // ```sgf ブロックがない場合は、ファイル全体を SGF とみなすか、あるいはエラーにする
+                            // 今回は指示通り「```sgfブロックから編集モードのノートを作成」なので、
+                            // ブロックがない場合はそのまま使うか通知を出す。
+                            // 既存の挙動を尊重し、見つからない場合は全体を SGF とみなすことにする（または警告を出す）
+                            new Notice('Markdownファイル内に ```sgf ブロックが見つかりませんでした。ファイル全体をSGFとして処理します。');
+                        }
+                    }
+
                     const fileName = path.basename(fullPath, path.extname(fullPath));
 
                     // 新しいノートを作成
