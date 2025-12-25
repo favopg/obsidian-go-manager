@@ -12,6 +12,8 @@ interface GoManagerSettings {
     importSgfDirPath?: string;
     // 座標と布石名のセット一覧（例: x:4, y:4, name:"星"）
     fusekiPairs?: { x: number; y: number; name: string }[];
+    // 一覧表示するヘッダ項目
+    displayColumns?: string[];
 }
 
 const DEFAULT_SETTINGS: GoManagerSettings = {
@@ -19,6 +21,7 @@ const DEFAULT_SETTINGS: GoManagerSettings = {
     boardSize: 19,
     importSgfDirPath: '',
     fusekiPairs: [],
+    displayColumns: ['黒番', '白番', '対局内容', '手合い割', '結果', '棋譜(SGFファイル名)'],
 };
 
 export default class GoManagerPlugin extends Plugin {
@@ -92,6 +95,7 @@ export default class GoManagerPlugin extends Plugin {
                         '// SGFフォルダ直下およびサブフォルダのSGFを一覧表示する',
                         `const ROOT = ${JSON.stringify(folderPathForCode)};`,
                         `const FILTER_SZ = ${JSON.stringify(selectedBoardSize)}; // 設定で選択された碁盤サイズ`,
+                        `const COLUMNS = ${JSON.stringify(this.settings.displayColumns || ['黒番', '白番', '対局内容', '手合い割', '結果', '棋譜(SGFファイル名)'])}; // 表示項目`,
                         `const FUSEKI = ${JSON.stringify(this.settings.fusekiPairs || [])}; // 設定の「座標と布石」一覧（1始まりの座標）`,
                         'const FUSEKI_MOVES_LIMIT = 7; // 先7手以内に含まれていれば件数あり',
                         '',
@@ -212,10 +216,33 @@ export default class GoManagerPlugin extends Plugin {
                         '    const pb = tag(src, "PB");',
                         '    const pw = tag(src, "PW");',
                         '    const gn = tag(src, "GN");',
-                        '    const haRaw = tag(src, "HA");',
-                        '    const haDisplay = toHandicap(haRaw);',
+                        '    const dt = tag(src, "DT");',
                         '    const reRaw = tag(src, "RE");',
                         '    const reDisplay = toJapaneseResult(reRaw);',
+                        '    const haRaw = tag(src, "HA");',
+                        '    const haDisplay = toHandicap(haRaw);',
+                        '    const ev = tag(src, "EV");',
+                        '    const pc = tag(src, "PC");',
+                        '    const te = tag(src, "TE");',
+                        '    const km = tag(src, "KM");',
+                        '    const tm = tag(src, "TM");',
+                        '',
+                        '    // 表示用データの構築',
+                        '    const rowMap = {',
+                        '      "黒番": pb,',
+                        '      "白番": pw,',
+                        '      "対局内容": gn,',
+                        '      "日付": dt,',
+                        '      "結果": reDisplay,',
+                        '      "手合": haDisplay,',
+                        '      "棋戦": ev,',
+                        '      "場所": pc,',
+                        '      "手合い割": haDisplay,',
+                        '      "コミ": km,',
+                        '      "持ち時間": tm,',
+                        '      "盤面": szRaw,',
+                        '      "棋譜(SGFファイル名)": f.name,',
+                        '    };',
                         '',
                         '    // 布石（名前ごと）一致チェック',
                         '    const matchedFusekiNames = [];',
@@ -350,7 +377,8 @@ export default class GoManagerPlugin extends Plugin {
                         '    allData.push({',
                         '      pb, pw, gn, haRaw, haDisplay, reRaw, reDisplay, link,',
                         '      matchedFusekiNames,',
-                        '      matchesAnyFuseki: matchedFusekiNames.length > 0',
+                        '      matchesAnyFuseki: matchedFusekiNames.length > 0,',
+                        '      rowValues: COLUMNS.map(c => c === "棋譜(SGFファイル名)" ? link : (rowMap[c] || ""))',
                         '    });',
                         '  }',
                         '',
@@ -372,46 +400,54 @@ export default class GoManagerPlugin extends Plugin {
                         '  dv.container.appendChild(filterDiv);',
                         '',
                         '  // ソート対象（対局者）入力',
-                        '  const playerFilterDiv = document.createElement("div");',
-                        '  const playerLabel = document.createElement("label");',
-                        '  playerLabel.textContent = "ソート対象：対局者を入力 ";',
-                        '  const playerInput = document.createElement("input");',
-                        '  playerInput.type = "text";',
-                        '  playerInput.placeholder = "例: 井山裕太 / 一力遼 など";',
-                        '  playerInput.style.width = "28em";',
-                        '  playerInput.style.maxWidth = "100%";',
-                        '  playerInput.style.marginLeft = "4px";',
-                        '  playerLabel.appendChild(playerInput);',
-                        '  playerFilterDiv.appendChild(playerLabel);',
-                        '  filterDiv.appendChild(playerFilterDiv);',
+                        '  const hasPlayerCol = COLUMNS.includes("黒番") || COLUMNS.includes("白番");',
+                        '  let playerInput = null;',
+                        '  if (hasPlayerCol) {',
+                        '    const playerFilterDiv = document.createElement("div");',
+                        '    const playerLabel = document.createElement("label");',
+                        '    playerLabel.textContent = "ソート対象：対局者を入力 ";',
+                        '    playerInput = document.createElement("input");',
+                        '    playerInput.type = "text";',
+                        '    playerInput.placeholder = "例: 井山裕太 / 一力遼 など";',
+                        '    playerInput.style.width = "28em";',
+                        '    playerInput.style.maxWidth = "100%";',
+                        '    playerInput.style.marginLeft = "4px";',
+                        '    playerLabel.appendChild(playerInput);',
+                        '    playerFilterDiv.appendChild(playerLabel);',
+                        '    filterDiv.appendChild(playerFilterDiv);',
+                        '  }',
                         '',
                         '  // 手合い割フィルタ',
-                        '  const haFilterDiv = document.createElement("div");',
-                        '  const haLabel = document.createElement("label");',
-                        '  haLabel.textContent = "手合い割：";',
-                        '  const haSelect = document.createElement("select");',
-                        '  haSelect.style.marginLeft = "4px";',
+                        '  const hasHaCol = COLUMNS.includes("手合い割") || COLUMNS.includes("手合");',
+                        '  let haSelect = null;',
+                        '  if (hasHaCol) {',
+                        '    const haFilterDiv = document.createElement("div");',
+                        '    const haLabel = document.createElement("label");',
+                        '    haLabel.textContent = "手合い割：";',
+                        '    haSelect = document.createElement("select");',
+                        '    haSelect.style.marginLeft = "4px";',
                         '',
-                        '  // データから実際に存在する手合い割を抽出（"すべて" + ユニークな値）',
-                        '  const uniqueHa = Array.from(new Set(allData.map(d => d.haDisplay)));',
-                        '  // ソート: 互戦を先頭に、その後は数字順',
-                        '  uniqueHa.sort((a, b) => {',
-                        '    if (a === "互戦") return -1;',
-                        '    if (b === "互戦") return 1;',
-                        '    const na = parseInt(a, 10) || 0;',
-                        '    const nb = parseInt(b, 10) || 0;',
-                        '    return na - nb;',
-                        '  });',
-                        '  const haOptions = ["すべて", ...uniqueHa];',
+                        '    // データから実際に存在する手合い割を抽出（"すべて" + ユニークな値）',
+                        '    const uniqueHa = Array.from(new Set(allData.map(d => d.haDisplay)));',
+                        '    // ソート: 互戦を先頭に、その後は数字順',
+                        '    uniqueHa.sort((a, b) => {',
+                        '      if (a === "互戦") return -1;',
+                        '      if (b === "互戦") return 1;',
+                        '      const na = parseInt(a, 10) || 0;',
+                        '      const nb = parseInt(b, 10) || 0;',
+                        '      return na - nb;',
+                        '    });',
+                        '    const haOptions = ["すべて", ...uniqueHa];',
                         '',
-                        '  for (const optVal of haOptions) {',
-                        '    const opt = document.createElement("option");',
-                        '    opt.value = optVal; opt.textContent = optVal;',
-                        '    haSelect.appendChild(opt);',
+                        '    for (const optVal of haOptions) {',
+                        '      const opt = document.createElement("option");',
+                        '      opt.value = optVal; opt.textContent = optVal;',
+                        '      haSelect.appendChild(opt);',
+                        '    }',
+                        '    haLabel.appendChild(haSelect);',
+                        '    haFilterDiv.appendChild(haLabel);',
+                        '    filterDiv.appendChild(haFilterDiv);',
                         '  }',
-                        '  haLabel.appendChild(haSelect);',
-                        '  haFilterDiv.appendChild(haLabel);',
-                        '  filterDiv.appendChild(haFilterDiv);',
                         '',
                         '  dv.container.appendChild(document.createElement("hr"));',
                         '',
@@ -449,15 +485,15 @@ export default class GoManagerPlugin extends Plugin {
                         '  pagingDiv.appendChild(pagerDiv);',
                         '  dv.container.appendChild(pagingDiv);',
                         '',
-                        '  const header = ["黒番","白番","対局内容","手合い割","結果","棋譜(SGFファイル名)"];',
+                        '  const header = COLUMNS;',
                         '',
                         '  const updateDisplay = () => {',
-                        '    const kw = (playerInput.value || "").trim().toLowerCase();',
-                        '    const haFilter = haSelect.value;',
+                        '    const kw = playerInput ? (playerInput.value || "").trim().toLowerCase() : "";',
+                        '    const haFilter = haSelect ? haSelect.value : "すべて";',
                         '',
                         '    // 1. フィルタリング',
                         '    let filtered = allData;',
-                        '    if (haFilter !== "すべて") {',
+                        '    if (haSelect && haFilter !== "すべて") {',
                         '      filtered = filtered.filter(d => d.haDisplay === haFilter);',
                         '    }',
                         '    // 布石設定がある場合は、いずれかの布石に一致するもののみ表示対象',
@@ -470,36 +506,51 @@ export default class GoManagerPlugin extends Plugin {
                         '    const fStats = {};',
                         '    for (const g of FUSEKI_GROUPS) fStats[g.name] = { total: 0, b: 0, w: 0 };',
                         '',
+                        '    const hasResultCol = COLUMNS.includes("結果");',
+                        '',
                         '    for (const d of filtered) {',
                         '      total++;',
-                        '      if (d.reRaw?.startsWith("B+")) bWins++;',
-                        '      else if (d.reRaw?.startsWith("W+")) wWins++;',
-                        '      for (const fname of d.matchedFusekiNames) {',
-                        '        const s = fStats[fname];',
-                        '        s.total++;',
-                        '        if (d.reRaw?.startsWith("B+")) s.b++;',
-                        '        else if (d.reRaw?.startsWith("W+")) s.w++;',
+                        '      if (hasResultCol) {',
+                        '        if (d.reRaw?.startsWith("B+")) bWins++;',
+                        '        else if (d.reRaw?.startsWith("W+")) wWins++;',
+                        '        for (const fname of d.matchedFusekiNames) {',
+                        '          const s = fStats[fname];',
+                        '          s.total++;',
+                        '          if (d.reRaw?.startsWith("B+")) s.b++;',
+                        '          else if (d.reRaw?.startsWith("W+")) s.w++;',
+                        '        }',
                         '      }',
                         '    }',
                         '',
                         '    summaryDiv.innerHTML = "";',
-                        '    const p1 = document.createElement("p");',
-                        '    p1.textContent = `対局数: ${total}局　黒: ${bWins}勝　白: ${wWins}勝`;',
-                        '    summaryDiv.appendChild(p1);',
-                        '    const p2 = document.createElement("p");',
-                        '    p2.textContent = `黒勝率: ${pct(bWins, total)}%　白勝率: ${pct(wWins, total)}%`;',
-                        '    summaryDiv.appendChild(p2);',
+                        '    if (total > 0) {',
+                        '      const p1 = document.createElement("p");',
+                        '      if (hasResultCol) {',
+                        '        p1.textContent = `対局数: ${total}局　黒: ${bWins}勝　白: ${wWins}勝`;',
+                        '      } else {',
+                        '        p1.textContent = `対局数: ${total}局`;',
+                        '      }',
+                        '      summaryDiv.appendChild(p1);',
                         '',
-                        '    if (FUSEKI_GROUPS.length > 0) {',
-                        '      summaryDiv.appendChild(document.createElement("hr"));',
-                        '      for (const g of FUSEKI_GROUPS) {',
-                        '        const s = fStats[g.name];',
-                        '        const pg1 = document.createElement("p");',
-                        '        pg1.textContent = `${g.name}の総対局数: ${s.total}局`;',
-                        '        summaryDiv.appendChild(pg1);',
-                        '        const pg2 = document.createElement("p");',
-                        '        pg2.textContent = `${g.name}の勝率　黒勝率: ${pct(s.b, s.total)}%　白勝率: ${pct(s.w, s.total)}%`;',
-                        '        summaryDiv.appendChild(pg2);',
+                        '      if (hasResultCol) {',
+                        '        const p2 = document.createElement("p");',
+                        '        p2.textContent = `黒勝率: ${pct(bWins, total)}%　白勝率: ${pct(wWins, total)}%`;',
+                        '        summaryDiv.appendChild(p2);',
+                        '      }',
+                        '',
+                        '      if (FUSEKI_GROUPS.length > 0) {',
+                        '        summaryDiv.appendChild(document.createElement("hr"));',
+                        '        for (const g of FUSEKI_GROUPS) {',
+                        '          const s = fStats[g.name];',
+                        '          const pg1 = document.createElement("p");',
+                        '          pg1.textContent = `${g.name}の総対局数: ${s.total}局`;',
+                        '          summaryDiv.appendChild(pg1);',
+                        '          if (hasResultCol) {',
+                        '            const pg2 = document.createElement("p");',
+                        '            pg2.textContent = `${g.name}の勝率　黒勝率: ${pct(s.b, s.total)}%　白勝率: ${pct(s.w, s.total)}%`;',
+                        '            summaryDiv.appendChild(pg2);',
+                        '          }',
+                        '        }',
                         '      }',
                         '    }',
                         '',
@@ -527,7 +578,7 @@ export default class GoManagerPlugin extends Plugin {
                         '    if (currentPage < 1) currentPage = 1;',
                         '    const start = (currentPage - 1) * pageSize;',
                         '    const end = start + pageSize;',
-                        '    const pageRows = displayData.slice(start, end).map(d => [d.pb, d.pw, d.gn, d.haDisplay, d.reDisplay, d.link]);',
+                        '    const pageRows = displayData.slice(start, end).map(d => d.rowValues);',
                         '',
                         '    dv.table(header, pageRows);',
                         '',
@@ -538,8 +589,8 @@ export default class GoManagerPlugin extends Plugin {
                         '  };',
                         '',
                         '  // イベント登録',
-                        '  playerInput.addEventListener("input", () => { currentPage = 1; updateDisplay(); });',
-                        '  haSelect.addEventListener("change", () => { currentPage = 1; updateDisplay(); });',
+                        '  if (playerInput) playerInput.addEventListener("input", () => { currentPage = 1; updateDisplay(); });',
+                        '  if (haSelect) haSelect.addEventListener("change", () => { currentPage = 1; updateDisplay(); });',
                         '  sizeSelect.addEventListener("change", () => { pageSize = parseInt(sizeSelect.value, 10) || 10; currentPage = 1; updateDisplay(); });',
                         '  prevBtn.addEventListener("click", () => { if (currentPage > 1) { currentPage--; updateDisplay(); } });',
                         '  nextBtn.addEventListener("click", () => { currentPage++; updateDisplay(); });',
@@ -896,6 +947,70 @@ class GoManagerSettingTab extends PluginSettingTab {
                     const v = Number(value) as 9 | 13 | 19;
                     this.plugin.settings.boardSize = v;
                     await this.plugin.saveSettings();
+                });
+            });
+
+        // --- 一覧表示項目の設定 ---
+        containerEl.createEl('h4', { text: '一覧表示項目' });
+        containerEl.createEl('p', { text: 'Dataviewで一覧表示する際のヘッダー項目を管理します。' });
+
+        if (!Array.isArray(this.plugin.settings.displayColumns)) {
+            this.plugin.settings.displayColumns = ['黒番', '白番', '対局内容', '手合い割', '結果', '棋譜(SGFファイル名)'];
+        }
+
+        const columnListEl = containerEl.createEl('div');
+        const renderColumns = () => {
+            columnListEl.empty();
+            (this.plugin.settings.displayColumns || []).forEach((col, idx) => {
+                const s = new Setting(columnListEl)
+                    .setName(col)
+                    .addExtraButton((b) => {
+                        b.setIcon('cross')
+                            .setTooltip('削除')
+                            .onClick(async () => {
+                                this.plugin.settings.displayColumns!.splice(idx, 1);
+                                await this.plugin.saveSettings();
+                                renderColumns();
+                            });
+                    });
+            });
+        };
+        renderColumns();
+
+        let selectedColToAdd = '黒番';
+        const columnOptions: Record<string, string> = {
+            '黒番': '黒番',
+            '白番': '白番',
+            '対局内容': '対局内容',
+            '手合い割': '手合い割',
+            '結果': '結果',
+            '棋譜(SGFファイル名)': '棋譜(SGFファイル名)',
+        };
+
+        new Setting(containerEl)
+            .setName('項目の追加')
+            .setDesc('一覧に表示する項目を選択して追加します。')
+            .addDropdown((dd) => {
+                Object.entries(columnOptions).forEach(([val, label]) => {
+                    dd.addOption(val, label);
+                });
+                dd.setValue(selectedColToAdd);
+                dd.onChange((value) => {
+                    selectedColToAdd = value;
+                });
+            })
+            .addButton((btn) => {
+                btn.setButtonText('追加').onClick(async () => {
+                    if (!this.plugin.settings.displayColumns) {
+                        this.plugin.settings.displayColumns = [];
+                    }
+                    if (!this.plugin.settings.displayColumns.includes(selectedColToAdd)) {
+                        this.plugin.settings.displayColumns.push(selectedColToAdd);
+                        await this.plugin.saveSettings();
+                        renderColumns();
+                    } else {
+                        new Notice('その項目は既に追加されています。');
+                    }
                 });
             });
 
