@@ -754,6 +754,87 @@ export default class GoManagerPlugin extends Plugin {
             }
         });
 
+        // Create ViewMode From EditMode: 編集モードのノートを参照モードに切り替えて指定ディレクトリに保存
+        this.addCommand({
+            id: 'create_view_mode_from_edit_mode',
+            name: 'Create ViewMode From EditMode',
+            callback: async () => {
+                const mdView = this.app.workspace.getActiveViewOfType(MarkdownView);
+                if (!mdView || !mdView.file) {
+                    new Notice('アクティブなMarkdownノートが見つかりません');
+                    return;
+                }
+
+                const content = mdView.getViewData();
+                if (!content.includes('```sgf-edit')) {
+                    new Notice('このノートは編集モード（sgf-edit）ではありません');
+                    return;
+                }
+
+                new DirectoryInputModal(this.app, async (dirName) => {
+                    if (!dirName || dirName.trim() === '') {
+                        new Notice('ディレクトリ名が入力されていません');
+                        return;
+                    }
+
+                    try {
+                        const trimmedDir = dirName.trim();
+                        // フォルダ作成（存在しなければ）
+                        const abstractDir = this.app.vault.getAbstractFileByPath(trimmedDir);
+                        if (!abstractDir) {
+                            await this.app.vault.createFolder(trimmedDir);
+                        } else if (!(abstractDir instanceof TFolder)) {
+                            new Notice(`エラー: "${trimmedDir}" はフォルダではありません`);
+                            return;
+                        }
+
+                        // 内容の置換
+                        const viewContent = content.replace(/```sgf-edit/g, '```sgf');
+                        
+                        // ファイル名の決定（既存のファイル名を引き継ぐが、拡張子抜きにする）
+                        const baseFileName = mdView.file!.basename;
+                        const targetPath = `${trimmedDir}/${baseFileName}.md`;
+
+                        // 重複回避
+                        let finalPath = targetPath;
+                        let i = 1;
+                        while (this.app.vault.getAbstractFileByPath(finalPath)) {
+                            finalPath = `${trimmedDir}/${baseFileName} (${i}).md`;
+                            i++;
+                        }
+
+                        // ファイル作成
+                        const newFile = await this.app.vault.create(finalPath, viewContent);
+                        
+                        // 元のファイルを削除するか確認するための情報を保持
+                        const originalFile = mdView.file;
+
+                        // 作成したファイルを開く
+                        const leaf = this.app.workspace.getLeaf(false);
+                        await leaf.openFile(newFile);
+
+                        new Notice(`参照モードのノートを保存しました: ${finalPath}`);
+
+                        // 削除確認モーダルを表示
+                        if (originalFile) {
+                            new ConfirmModal(this.app, `元の編集モードファイル "${originalFile.path}" を削除しますか？`, async () => {
+                                try {
+                                    await this.app.vault.trash(originalFile, true);
+                                    new Notice(`元のファイルを削除しました: ${originalFile.path}`);
+                                } catch (err: any) {
+                                    console.error(err);
+                                    new Notice(`ファイルの削除中にエラーが発生しました: ${err.message}`);
+                                }
+                            }).open();
+                        }
+                    } catch (err: any) {
+                        console.error(err);
+                        new Notice(`保存中にエラーが発生しました: ${err.message}`);
+                    }
+                }).open();
+            }
+        });
+
         // 設定タブ（歯車アイコン）
         this.addSettingTab(new GoManagerSettingTab(this.app, this));
     }
@@ -787,6 +868,97 @@ class ErrorModal extends Modal {
     }
 
     onClose(): void {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+// 削除確認用モーダル
+class ConfirmModal extends Modal {
+    private message: string;
+    private onConfirm: () => void;
+
+    constructor(app: App, message: string, onConfirm: () => void) {
+        super(app);
+        this.message = message;
+        this.onConfirm = onConfirm;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl('h3', { text: '確認' });
+        contentEl.createEl('p', { text: this.message });
+
+        const buttonContainer = contentEl.createDiv({ cls: 'modal-button-container' });
+
+        new Setting(buttonContainer)
+            .addButton((btn) =>
+                btn
+                    .setButtonText('削除する')
+                    .setWarning()
+                    .onClick(() => {
+                        this.close();
+                        this.onConfirm();
+                    })
+            )
+            .addButton((btn) =>
+                btn
+                    .setButtonText('キャンセル')
+                    .onClick(() => {
+                        this.close();
+                    })
+            );
+    }
+
+    onClose() {
+        const { contentEl } = this;
+        contentEl.empty();
+    }
+}
+
+// ディレクトリ名入力用モーダル
+class DirectoryInputModal extends Modal {
+    private result: string;
+    private onSubmit: (result: string) => void;
+
+    constructor(app: App, onSubmit: (result: string) => void) {
+        super(app);
+        this.onSubmit = onSubmit;
+    }
+
+    onOpen() {
+        const { contentEl } = this;
+        contentEl.createEl('h3', { text: '保存先ディレクトリ名を入力してください' });
+
+        const inputSetting = new Setting(contentEl)
+            .setName('ディレクトリ名')
+            .addText((text) =>
+                text.onChange((value) => {
+                    this.result = value;
+                })
+            );
+
+        new Setting(contentEl)
+            .addButton((btn) =>
+                btn
+                    .setButtonText('決定')
+                    .setCta()
+                    .onClick(() => {
+                        this.close();
+                        this.onSubmit(this.result);
+                    })
+            );
+        
+        // Enterキーでも決定できるようにする
+        inputSetting.controlEl.querySelector('input')?.addEventListener('keydown', (e: KeyboardEvent) => {
+            if (e.key === 'Enter') {
+                this.close();
+                this.onSubmit(this.result);
+            }
+        });
+    }
+
+    onClose() {
         const { contentEl } = this;
         contentEl.empty();
     }
